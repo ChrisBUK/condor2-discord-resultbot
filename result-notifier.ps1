@@ -63,16 +63,16 @@ if ($livemode -eq 1) {
     $resultPath = 'C:\Dshelper_servers\RaceResults\' 
     $resultFile = 'VSC_Race_results.csv'
     $taskFile = 'C:\SampleTask.fpl'
-    $webhook_discord_result = 'https://discord.com/api/webhooks/741916625854529536/gUFqe5s3Ou9dABvCb3CZWyCqVONysuQJM-v4FAQJb14SKeJDn8ZN-OXsCVkFDkM2Xg2B'
-    $webhook_discord_general = 'https://discordapp.com/api/webhooks/789111686900613122/_2A_wDLXhOtYuOWwJUfogJcuNniX3sPZ1UyDniRqkCqcpJCmOfVwz0aILqu9I1duG19w'
+    $webhook_discord_result = 'https://discord.com/api/webhooks/YOUR_WEBHOOK'
+    $webhook_discord_general = 'https://discordapp.com/api/webhooks/YOUR_WEBHOOK'
     $webhook_ifttt = ''
 } else {
     $interval = 10 #seconds to pause inbetween checking for results
     $resultPath = 'C:\Dshelper_servers\RaceResults\' 
     $resultFile = 'VSC_Race_results.csv'
     $taskFile = 'C:\SampleTask.fpl'
-    $webhook_discord_result = 'https://discordapp.com/api/webhooks/804661711180922881/-1SdQThlMFamjMK8NEP3zhdBw9pH3Bee7KhrLy1kz_DigVI103tZc-leug0Hm0Y4AGEc'
-    $webhook_discord_general = 'https://discordapp.com/api/webhooks/804661711180922881/-1SdQThlMFamjMK8NEP3zhdBw9pH3Bee7KhrLy1kz_DigVI103tZc-leug0Hm0Y4AGEc'
+    $webhook_discord_result = 'https://discordapp.com/api/webhooks/804661711180922881/YOUR_WEBHOOK'
+    $webhook_discord_general = 'https://discordapp.com/api/webhooks/804661711180922881/YOUR_WEBHOOK'
     $webhook_ifttt = ''
 }
 
