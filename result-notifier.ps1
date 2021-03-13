@@ -1,119 +1,300 @@
-$interval = 300
-$resultPath = 'C:\YOUR_PATH\'
-$resultFile = 'result.txt'
-$webhook = 'https://discordapp.com/api/webhooks/YOUR_WEBHOOK_ID'
-$livemode= $true #are we wanting to send the data to discord for the public?
+$livemode = 0;
+
+# FUNCTIONS 
+
+# Fire webhook to deliver results. Blocks of up to 2000 chars can go as one, otherwise it has to go by line.
+function fireWebhook($content,$uri,$header,$titles) {    
+   
+    # If less than 2000 characters for a block, discord will take it so we give it.
+    if ($content.Length -le 2000 -and $content.Length -gt 0) {
+        $fields = @{ content = '```' + $header.replace('[]','') + $titles + $content + '```' };
+        $out = Invoke-RestMethod -Uri $uri -Method Post -Body $fields 
+        # Small pause after a chunk of data
+        Start-Sleep -Seconds 1;
+    } else {
+
+        # Here is where we have to split things down into 2000 character chunks. We'll try to do it at sensible breakpoints.       
+        $chunksTotal = [math]::Ceiling($content.Length / 2000)
+        $splitContent = $content.replace('```','').split("`r`n");
+
+        $chunkNumber = 1
+        $chunk = $header.replace('[]','['+$chunkNumber+' of '+$chunksTotal+']') + $titles
+
+        foreach ($line in $splitContent) {
+                   
+            # If adding a line doesn't bust the limit, add it (+2 for the newline and less 6 for the backticks hence 1996 not 2000).                            
+            if ($line.Length + $chunk.Length -le 1900) { 
+                if ($line.Length -gt 0) {
+                    $chunk += $line + "`n" 
+                }
+            } else {               
+                
+                # If adding the line busts the limit, send the data and reset the chunk to be the header only, and begin looping again.         
+                if ($line.Length -gt 0) {
+                    $chunk += $line + "`n" 
+                }
+                $fields = @{ content = '```'+$chunk+'```' }
+                $out = Invoke-Restmethod -Uri $uri -Method Post -Body $fields;
+                
+                # Increment and reset chunk content
+                $chunkNumber++
+                $chunk = $header.replace('[]','['+$chunkNumber+' of '+$chunksTotal+']') + $titles
+                
+                # Small pause after sending
+                Start-Sleep -Seconds 1
+            }
+        }
+
+        # Send the remaining data (if there is any) after we have exited the loop at the last line
+        if ($chunk.Length -gt 0) {            
+            $fields = @{ content = '```'+$chunk+'```' }
+            $out = Invoke-Restmethod -Uri $uri -Method Post -Body $fields;
+            # Small pause after sending
+            Start-Sleep -Seconds 1
+        }
+
+    }
+}
+
+# ENVIRONMENT SETTINGS
+
+if ($livemode -eq 1) { 
+    $interval = 300 #seconds to pause inbetween checking for results
+    $resultPath = 'C:\Dshelper_servers\RaceResults\' 
+    $resultFile = 'VSC_Race_results.csv'
+    $taskFile = 'C:\SampleTask.fpl'
+    $webhook_discord_result = 'https://discord.com/api/webhooks/741916625854529536/gUFqe5s3Ou9dABvCb3CZWyCqVONysuQJM-v4FAQJb14SKeJDn8ZN-OXsCVkFDkM2Xg2B'
+    $webhook_discord_general = 'https://discordapp.com/api/webhooks/789111686900613122/_2A_wDLXhOtYuOWwJUfogJcuNniX3sPZ1UyDniRqkCqcpJCmOfVwz0aILqu9I1duG19w'
+    $webhook_ifttt = ''
+} else {
+    $interval = 10 #seconds to pause inbetween checking for results
+    $resultPath = 'C:\Dshelper_servers\RaceResults\' 
+    $resultFile = 'VSC_Race_results.csv'
+    $taskFile = 'C:\SampleTask.fpl'
+    $webhook_discord_result = 'https://discordapp.com/api/webhooks/804661711180922881/-1SdQThlMFamjMK8NEP3zhdBw9pH3Bee7KhrLy1kz_DigVI103tZc-leug0Hm0Y4AGEc'
+    $webhook_discord_general = 'https://discordapp.com/api/webhooks/804661711180922881/-1SdQThlMFamjMK8NEP3zhdBw9pH3Bee7KhrLy1kz_DigVI103tZc-leug0Hm0Y4AGEc'
+    $webhook_ifttt = ''
+}
+
+# GLIDER CLASSES - Enter exactly as they are referenced in the results file. A glider can feature in multiple classes.
+
+$class_club      = 'ASW19','ASW20','DG101G','Libelle','LS4a','Pegase','StdCirrus'
+$class_18m       = 'Antares18s','ASG29-18','ASG29Es-18','DG808C-18','JS1-18','JS3-18','Ventus3-18'
+$class_15m       = 'DG808C-15','Diana2','JS3-15', 'Ventus3-15'
+$class_standard  = 'Discus2a','Genesis2','LS8neo'
+$class_open      = 'EB29R','ASK21','JS1-21','StemmeS12','SwiftS1'
+$class_20m_multi = 'Arcus','DuoDiscus'
+$class_vintage   = 'Ka6CR','Blanik','K8','GranauBaby','SG38','SGS1-26'
+
+# MAIN LOOP
 
 do {
-	if(Test-Path ($resultPath + $resultFile)) {
-		#sleep to hanlde if the file has just been created but not finished being written to
-		Start-Sleep -Milliseconds 500
-		
-		### DELETE OLD RESULT UPLOAD AND RECREATE
+	if (Test-Path ($resultPath + $resultFile)) {			
+        
+		# Initialise results variables to make sure they are empty        
 
-		if (Test-Path ($resultPath + 'upload.txt')) {
-			Remove-Item ($resultPath + 'upload.txt')
-		}		
+        $disconnectedCount = 0;
+        $nonfinisherCount = 0;
 
-		New-Item -Path $resultPath -Name "upload.txt" -ItemType "file" -Value "RACE RESULTS:`r`n"
+        $formatted = '';
+		$result_all = ''; 
+        $result_club = '';
+        $result_18m = '';
+        $result_15m = '';
+        $result_standard = '';
+        $result_open = '';
+        $result_20m_multi = '';
+        $result_vintage = '';
 
-		#initialise results variables to make sure they are empty
-		$finishers = ''
-		$finisherCount = 0
-		$crashed = ''
-		$other = ''
+        $start_all = 0;
+        $finish_all = 0;
+        $finish_club = 0;
+        $finish_18m = 0;
+        $finish_15m = 0;
+        $finish_standard = 0;
+        $finish_open = 0;
+        $finish_20m_multi = 0;
+        $finish_vintage = 0;
 
-		### PARSE RESULT LOG FILE INTO SOMETHING MORE READABLE AND IN CORRECT CATEGORIES
+		$firstPlace = ''
+		$placings= ''
 
-		$header = '1'
+		### PARSE RESULT LOG FILE TO BE HUMAN READABLE
+
+		$lineNumber = 0
+
+		$scoresHeader  = ('POS| POINTS |    GLIDER     | ID  |        PILOT         |   DIST   |   SPEED    |   TIME   |  STATUS  |  PEN    '+"`r`n")
+        $scoresHeader += ('-----------------------------------------------------------------------------------------------------------------'+"`r`n")
+
 
 		[System.IO.File]::ReadLines($resultPath + $resultFile) | ForEach-Object {
 
-			If ($header -eq '0') {
+			If ($lineNumber -ge 1) {
 				$parts = $_ -split ","
-				
-				$formatted =	(	'`' + 
-							$parts[0].padRight(2,' ') + '| ' + #position
+
+                # Change statuses to reflect reality  
+                $niceStatus = $parts[1];              
+                $niceStatus = $niceStatus.replace('Racing','Disconn');
+                $niceStatus = $niceStatus.replace('Landed','Landout');
+
+				# Build line
+				$formatted =	(
+							'???' + '| ' +                      # position placeholder
 							$parts[10].replace(' p',' ').padLeft(7,' ') + '| ' +	# points
-							$parts[5].padRight(14,' ') + '| ' + # glider
-							$parts[3].padRight(4,' ') + '| ' + # trigraph
-							$parts[2].replace('.','').padRight(21,' ') + '|' + # name
- 							$parts[6].padLeft(9,' ') + ' | ' + # distance
-							$parts[8].padLeft(10,' ') + ' | ' + # speed
-							$parts[7].padRight(9,' ') + '| ' + # time
-							$parts[1].padRight(9,' ') + # status
-							$parts[9].replace(' p','').padLeft(7,' ') + # penalties
+							$parts[5].padRight(14,' ') + '| ' + 			        # glider
+							$parts[3].padRight(4,' ') + '| ' + 			            # trigraph
+							$parts[2].replace('.',' ').padRight(21,' ') + '|' + 	# name
+ 							$parts[6].padLeft(9,' ') + ' | ' + 			            # distance
+							$parts[8].padLeft(10,' ') + ' | ' + 			        # speed
+							$parts[7].padRight(9,' ') + '| ' + 			            # time
+							$niceStatus.padRight(9,' ') + '| ' + 	                # status
+							$parts[9].replace(' p','').padLeft(6,' ') + 		    # penalties
 #							$parts[11].padRight(16,' ') + ' | ' +
 #							$parts[12].padRight(12,' ') +  
-							'`' + "`r`n"
-						)
-			
+							"`r`n"
+						)		
+
+                # Update counts of statuses                
 
 				switch ($parts[1]) {
-					'Finished' { 
-								$finishers += $formatted 
-								$finisherCount++
-					}
-					'Crashed'  { $crashed   += $formatted }
-					'Landed'   { $crashed   += $formatted }
-					default    { $other     += $formatted }
+					'Finished' { $finish_all++; $start_all++; }
+					'Racing'   { $disconnectedCount++; $start_all++; }
+					'Crashed'  { $nonfinisherCount++; $start_all++; }
+					'Landed'   { $nonfinisherCount++; $start_all++;}
+					default    { $nonfinisherCount++; }
 				}
+
+				# Shortened/Friendly result text for winner for social media or non-result channel
+
+                if ($lineNumber -eq 1) {
+					$firstPlace = 'Congratulations to ' + $parts[2].replace('.',' ') + ' on a race win in their ' + $parts[5] + ', completing ' + $parts[6] + ' in ' + $parts[7] + ', achieving a speed of ' + $parts[8] + '. See #race-results for the full classification.'
+					$placings = '1st Place: ' + $parts[2] + " ("+$parts[8]+")`r`n"
+				}
+				if ($lineNumber -eq 2) {				
+					$placings += '2nd Place: ' + $parts[2] + " ("+$parts[8]+")`r`n"
+				}
+				if ($lineNumber -eq 3) {
+					$placings += '3rd Place: ' + $parts[2] + ' ('+$parts[8]+')'
+				}	
 				
-			}
 			
-			$header = '0'			
+                # Build the results output by class.
+
+                $result_all += $formatted.replace('???', $lineNumber.toString().padRight(3,' '));
+                        
+                if ($parts[5] -in $class_club) {
+                    $finish_club++;
+                    $result_club += $formatted.replace('???',$finish_club.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_18m) {
+                    $finish_18m++;
+                    $result_18m += $formatted.replace('???',$finish_18m.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_15m) {
+                    $finish_15m++;
+                    $result_15m += $formatted.replace('???',$finish_15m.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_standard) {
+                    $finish_standard++;
+                    $result_standard += $formatted.replace('???',$finish_standard.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_open) {
+                    $finish_open++;
+                    $result_open += $formatted.replace('???',$finish_open.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_20m_multi) {
+                    $finish_20m_multi++;
+                    $result_20m_multi += $formatted.replace('???',$finish_20m_multi.toString().padRight(3,' '));
+                }
+
+                if ($parts[5] -in $class_vintage) {
+                    $finish_vintage++;
+                    $result_vintage += $formatted.replace($parts[0],$finish_vintage.toString().padRight(3,' '));
+                }
+
+                write-host $lineNumber $parts[2] $parts[5] $finish_20m_multi $start_all
+
+            }
+            
+			$lineNumber++;
 		}
 	
-		### CREATE THE FILE TO SEND TO DISCORD 		
+		### SEND RESULTS TO DISCORD WEBHOOK	
+        ### Never send results of a 'race' where only one person started it - a race needs two!
+        ### Never send a class of results that is empty.
+        ### If a race is single class, do not send 'all' as it will be the same as the class.	 
+        
+        $num_classes = 0;
+        if ($finish_club -ge 1) { $num_classes++ }
+        if ($finish_15m -ge 1) { $num_classes++ }
+        if ($finish_18m -ge 1) { $num_classes++ }
+        if ($finish_standard -ge 1) { $num_classes++ }
+        if ($finish_open -ge 1) { $num_classes++ }
+        if ($finish_20m_multi -ge 1) { $num_classes++ }
+        if ($finish_vintage -ge 1) { $num_classes++ }
 
-		$resultData  = "`FINISHERS:`r`n" + $finishers + "`r`n"
-		$resultData += "`NON-FINISHERS:`r`n" + $crashed + "`r`n"
-		$resultData += "`DID NOT START:`r`n" + $other + "`r`n"
 
-		Add-Content -Path $resultPath\upload.txt  -Value $resultData 
+        if ($start_all -gt 1) {       
+
+            # ALL results for a multi-class race.
+            if ($num_classes -gt 1) {             
+                fireWebhook -content $result_all -uri $webhook_discord_result -header "FULL RESULTS (ALL CLASSES) []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_club -ge 1) {            
+                fireWebhook -content $result_club -uri $webhook_discord_result -header "CLUB CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_15m -ge 1) {
+                fireWebhook -content $result_15m -uri $webhook_discord_result -header "15 METRE CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_18m -ge 1) {
+                fireWebhook -content $result_18m -uri $webhook_discord_result -header "18 METRE CLASS []:`r`n`r`n" -titles $scoresHeader           
+            }
+
+            if ($finish_standard -ge 1) {
+                fireWebhook -content $result_standard -uri $webhook_discord_result -header "STANDARD CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_open -ge 1) {
+                fireWebhook -content $result_open -uri $webhook_discord_result -header "OPEN CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_20m_multi -ge 1) {
+                fireWebhook -content $result_20m_multi -uri $webhook_discord_result -header "20 METRE MULTISEAT CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
+            if ($finish_vintage -ge 1) {
+                fireWebhook -content $result_vintage -uri $webhook_discord_result -header "VINTAGE CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
 		
-		
-	### SEND TO DISCORD IF THERE ARE FINISHERS
-	### IT HAS TO BE LINE BY LINE
-	### WE SLOW DOWN THE SENDING SO WE DON'T MAKE THEM RATE-LIMIT US
+            ### WRITE THE QUICKRESULT OUT TO DISCORD
+		    $Form = @{
+			    content = $firstPlace;
+		    }
 
-		if ($finisherCount -ge 1 ){ 
-
-			[System.IO.File]::ReadLines($resultPath + 'upload.txt') | ForEach-Object {
-
-				$Form = @{
-				content = $_
-				}
-				
-				#send results to the webhook if in live mode and ignore any errors (will give empty errors if no try catch)
-				$Result = try { 
-					if($livemode) {
-                        Invoke-WebRequest -Uri $webhook -Method Post -Body $Form -UseBasicParsing
-                     } else {
-                        Write-Host $_
-                     }
-				} catch [System.Net.WebException] { 
-					Write-Verbose "An exception was caught: $($_.Exception.Message)"
-					$_.Exception.Response 
-				} 
-
-				Start-Sleep -Milliseconds 500
-			}	
-		} else {
-			Write-Host "Not enough finishers to upload - " + $finisherCount + " finishers"
-		}
+            $out = Invoke-Restmethod -Uri $webhook_discord_general -Method Post -Body $Form 
+        }
+        
+        ### WRITE THE QUICKRESULT FILE OUT TO FACEBOOK / TWITTER / IFTTT OR WHATEVER
+        ### [[ TODO ]]
 
 		### DELETE/ARCHIVE THE OLD RESULT FILE
 		
 		#rename the DSH results file so we don't process it again
-		if (Test-Path ($resultPath + $resultFile)) {
-			Rename-Item -Path ($resultPath + $resultFile) -NewName ($resultPath + $resultFile + [DateTime]::Now.ToString("yyyyMMdd-HHmmss") + ".csv")
+		
+        if ($livemode -eq 1) {
+            if (Test-Path ($resultPath + $resultFile)) {
+			    Rename-Item -Path ($resultPath + $resultFile) -NewName ($resultPath + $resultFile.Replace('.csv','') + '_' + [DateTime]::Now.ToString("yyyyMMdd-HHmmss") + ".csv")
+            }
 		}
 
-		#remove upload txt file to clean up
-		if (Test-Path ($resultPath + 'upload.txt')) {
-			Remove-Item ($resultPath + 'upload.txt')
-		}
 	}		
 
 	### SLEEP FOR A BIT BEFORE LOOKING FOR MORE RESULTS TO UPLOAD
