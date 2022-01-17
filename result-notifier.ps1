@@ -78,13 +78,14 @@ if ($livemode -eq 1) {
 
 # GLIDER CLASSES - Enter exactly as they are referenced in the results file. A glider can feature in multiple classes.
 
-$class_club      = 'ASW19','ASW20','DG101G','Libelle','LS4a','Pegase','StdCirrus'
-$class_18m       = 'Antares18s','ASG29-18','ASG29Es-18','DG808C-18','JS1-18','JS3-18','Ventus3-18'
+$class_club      = 'ASW19','ASW20','DG101G','Libelle','LS4a','Pegase','StdCirrus','ASW15'
+$class_18m       = 'Antares18s','ASG29-18','ASG29Es-18','DG808C-18','JS1-18','JS3-18','Ventus3-18','DG1000S'
 $class_15m       = 'DG808C-15','Diana2','JS3-15', 'Ventus3-15'
 $class_standard  = 'Discus2a','Genesis2','LS8neo'
-$class_open      = 'EB29R','ASK21','JS1-21','StemmeS12','SwiftS1'
+$class_open      = 'Antares18s','Arcus','ASG29-18','ASG29Es-18','ASK21','ASW15','ASW19','ASW20','Blanik','DG1000S','DG101G','DG808C-15','DG808C-18','Diana2','Discus2a','DuoDiscus','EB29R','Genesis2','GrunauBaby','JS1-18','JS1-21','JS3-15','JS3-18','K8','Ka6CR','Libelle','LS4a','LS8Neo','Pegase','PilatusB4','SG38','SGS1-26','StdCirrus','StemmeS12','SwiftS1','Ventus3-15','Ventus3-18'
 $class_20m_multi = 'Arcus','DuoDiscus'
-$class_vintage   = 'Ka6CR','Blanik','K8','GranauBaby','SG38','SGS1-26'
+$class_vintage   = 'Ka6CR','Blanik','K8','GrunauBaby','SG38','SGS1-26'
+$class_school	 = 'ASK21','Blanik','DG1000S','GrunauBaby','K8','Ka6CR','PilatusB4','SG38','SGS1-26'
 
 # MAIN LOOP
 
@@ -97,7 +98,7 @@ do {
         $nonfinisherCount = 0;
 
         $formatted = '';
-		$result_all = ''; 
+	$result_all = ''; 
         $result_club = '';
         $result_18m = '';
         $result_15m = '';
@@ -105,6 +106,7 @@ do {
         $result_open = '';
         $result_20m_multi = '';
         $result_vintage = '';
+	$result_school = '';
 
         $start_all = 0;
         $finish_all = 0;
@@ -115,6 +117,7 @@ do {
         $finish_open = 0;
         $finish_20m_multi = 0;
         $finish_vintage = 0;
+	$finish_school = 0;
 
 		$firstPlace = ''
 		$placings= ''
@@ -217,8 +220,11 @@ do {
                     $result_vintage += $formatted.replace($parts[0],$finish_vintage.toString().padRight(3,' '));
                 }
 
-                write-host $lineNumber $parts[2] $parts[5] $finish_20m_multi $start_all
-
+                if ($parts[5] -in $class_school) {
+                    $finish_school++;
+                    $result_school += $formatted.replace($parts[0],$finish_vintage.toString().padRight(3,' '));
+                }
+	
             }
             
 			$lineNumber++;
@@ -237,6 +243,7 @@ do {
         if ($finish_open -ge 1) { $num_classes++ }
         if ($finish_20m_multi -ge 1) { $num_classes++ }
         if ($finish_vintage -ge 1) { $num_classes++ }
+	if ($finish_school -ge 1) { $num_classes++ }
 
 
         if ($start_all -gt 1) {       
@@ -273,7 +280,11 @@ do {
             if ($finish_vintage -ge 1) {
                 fireWebhook -content $result_vintage -uri $webhook_discord_result -header "VINTAGE CLASS []:`r`n`r`n" -titles $scoresHeader
             }
-		
+
+            if ($finish_school -ge 1) {
+                fireWebhook -content $result_school -uri $webhook_discord_result -header "SCHOOL CLASS []:`r`n`r`n" -titles $scoresHeader
+            }
+
             ### WRITE THE QUICKRESULT OUT TO DISCORD
 		    $Form = @{
 			    content = $firstPlace;
